@@ -1,0 +1,58 @@
+# Virtual server for ZiFii sites. ZiFii OS decides every login (password, plan, site and
+# device limit) and returns the session timeout and speed limits, so FreeRADIUS only relays.
+# Install: copy to /etc/freeradius/3.0/sites-available/zifii, link into sites-enabled/,
+# and remove sites-enabled/default and sites-enabled/inner-tunnel.
+
+server zifii {
+	listen {
+		type = auth
+		ipaddr = *
+		port = 1812
+	}
+
+	listen {
+		type = acct
+		ipaddr = *
+		port = 1813
+	}
+
+	authorize {
+		# Captive portals send PAP. Anything else is refused rather than half-handled.
+		if (!&User-Password) {
+			update reply {
+				&Reply-Message := "Please sign in through the login page."
+			}
+			reject
+		}
+
+		update control {
+			&REST-HTTP-Header := "Authorization: Bearer $ENV{ZIFII_RADIUS_API_TOKEN}"
+		}
+		zifii
+		if (ok || updated) {
+			update control {
+				&Auth-Type := Accept
+			}
+		}
+	}
+
+	authenticate {
+	}
+
+	preacct {
+		acct_unique
+	}
+
+	accounting {
+		update control {
+			&REST-HTTP-Header := "Authorization: Bearer $ENV{ZIFII_RADIUS_API_TOKEN}"
+		}
+		zifii
+	}
+
+	post-auth {
+		Post-Auth-Type REJECT {
+			attr_filter.access_reject
+		}
+	}
+}
